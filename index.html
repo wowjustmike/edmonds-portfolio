@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mike Edmonds — IT · Games · Photo</title>
+<meta name="description" content="Mike Edmonds — IT engineer, game developer, photographer, and entrepreneur based in Las Vegas.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e14;
+    --surface: #0d1117;
+    --border: #1b2332;
+    --prompt: #7ee787;
+    --cmd: #79c0ff;
+    --text: #c9d1d9;
+    --muted: #6e7681;
+    --accent: #f0883e;
+    --pink: #d2a8ff;
+    --cyan: #56d4dd;
+    --red: #ff7b72;
+    --yellow: #e3b341;
+    --font: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html { background: var(--bg); }
+  body { font-family: var(--font); color: var(--text); background: var(--bg); min-height: 100vh; display: flex; flex-direction: column; max-width: 520px; margin: 0 auto; }
+  ::-webkit-scrollbar { width: 3px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  a { color: inherit; text-decoration: none; }
+  @keyframes blink { 50% { opacity: 0; } }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Boot screen */
+  #boot { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; z-index: 100; transition: opacity 0.4s; }
+  #boot.hidden { opacity: 0; pointer-events: none; }
+  #boot .msg { color: var(--prompt); font-size: 15px; animation: blink 1s step-end infinite; }
+  #boot .bar { color: var(--muted); font-size: 12px; }
+
+  /* Title bar */
+  .titlebar { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 10; background: var(--bg); }
+  .dots { display: flex; gap: 6px; }
+  .dots span { width: 10px; height: 10px; border-radius: 50%; }
+  .titlebar-text { color: var(--muted); font-size: 12px; flex: 1; text-align: center; }
+
+  /* Nav */
+  .nav { padding: 10px 16px; display: flex; gap: 8px; overflow-x: auto; border-bottom: 1px solid var(--border); position: sticky; top: 44px; z-index: 10; background: var(--bg); }
+  .nav button { background: transparent; border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; color: var(--muted); font-size: 12px; font-family: var(--font); cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: all 0.2s; }
+  .nav button.active { background: rgba(126,231,135,0.08); border-color: rgba(126,231,135,0.27); color: var(--prompt); }
+
+  /* Body */
+  .body { flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+  /* Prompt */
+  .prompt-line { display: flex; gap: 8px; font-size: 13px; line-height: 1.6; }
+  .prompt-char { color: var(--prompt); flex-shrink: 0; }
+  .prompt-cmd { color: var(--cmd); }
+  .cursor { animation: blink 1s step-end infinite; }
+
+  /* Section content */
+  .section { animation: fadeUp 0.35s ease both; }
+  .section-body { margin-top: 10px; padding-left: 2px; }
+
+  /* About */
+  .about { font-size: 13px; line-height: 1.8; }
+  .about h2 { color: var(--pink); font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+  .about p { color: var(--muted); margin-bottom: 14px; }
+  .about a { color: var(--accent); }
+  .badges { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+  .badge { border-radius: 6px; padding: 10px 14px; text-align: center; flex: 1 1 80px; min-width: 80px; }
+  .badge .city { font-size: 16px; font-weight: 700; }
+  .badge .years { color: var(--muted); font-size: 10px; margin-top: 2px; }
+
+  /* Photos */
+  .photo-filters { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 14px; padding-bottom: 4px; }
+  .photo-filters button { background: transparent; border: 1px solid var(--border); border-radius: 14px; padding: 4px 12px; color: var(--muted); font-size: 11px; font-family: var(--font); cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+  .photo-filters button.active { background: rgba(86,212,221,0.13); border-color: rgba(86,212,221,0.38); color: var(--cyan); }
+  .photo-grid { display: flex; flex-direction: column; gap: 3px; }
+  .photo-item { display: block; position: relative; width: 100%; }
+  .photo-item img { width: 100%; display: block; object-fit: cover; background: var(--surface); min-height: 200px; }
+  .photo-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 24px 14px 12px; background: linear-gradient(transparent, rgba(0,0,0,0.75)); display: flex; justify-content: space-between; align-items: flex-end; }
+  .photo-label { color: #fff; font-size: 13px; font-weight: 600; }
+  .photo-cat { color: var(--cyan); font-size: 10px; background: rgba(86,212,221,0.15); padding: 2px 8px; border-radius: 10px; }
+  .photo-link { text-align: center; padding: 16px 0 4px; font-size: 12px; }
+  .photo-link a { color: var(--accent); }
+
+  /* Games */
+  .game-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .game-inner { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .game-head { display: flex; align-items: center; gap: 10px; }
+  .game-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .game-title { font-size: 14px; font-weight: 600; color: var(--text); }
+  .game-genre { font-size: 11px; color: var(--muted); }
+  .game-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .game-actions { display: flex; gap: 8px; margin-top: 4px; }
+  .game-play { flex: 1; border-radius: 6px; padding: 10px 0; font-size: 12px; font-family: var(--font); cursor: pointer; }
+  .game-link { padding: 10px 14px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-size: 12px; display: flex; align-items: center; }
+  .game-embed { border-top: 1px solid var(--border); background: #000; padding: 8px; }
+  .game-embed iframe { width: 100%; height: 167px; border: none; border-radius: 6px; }
+
+  /* Skills */
+  .skill-cat { color: var(--pink); margin-bottom: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; }
+  .skill-group { margin-bottom: 16px; }
+  .skill-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .skill-tag { background: rgba(121,192,255,0.07); border: 1px solid rgba(121,192,255,0.16); color: var(--cmd); padding: 4px 10px; border-radius: 4px; font-size: 11px; }
+
+  /* Contact */
+  .contact-link { display: flex; align-items: center; gap: 8px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+  .contact-label { color: var(--accent); min-width: 62px; font-size: 12px; }
+  .contact-value { word-break: break-all; font-size: 12px; }
+
+  /* Input */
+  .input-line { display: flex; gap: 8px; align-items: center; font-size: 13px; margin-top: 8px; }
+  .input-line input { flex: 1; background: transparent; border: none; outline: none; color: var(--cmd); font-size: 13px; font-family: var(--font); caret-color: var(--prompt); }
+
+  /* Footer */
+  .footer { padding: 10px 16px; border-top: 1px solid var(--border); font-size: 10px; color: var(--muted); background: var(--bg); display: flex; justify-content: space-between; }
+
+  /* ASCII */
+  .ascii { color: var(--cyan); margin-bottom: 6px; font-size: 11px; line-height: 1.4; white-space: pre; }
+</style>
+</head>
+<body>
+
+<div id="boot">
+  <div class="msg">Booting portfolio.sys...</div>
+  <div class="bar">loading modules ██████████░░ 78%</div>
+</div>
+
+<div class="titlebar">
+  <div class="dots">
+    <span style="background:var(--red)"></span>
+    <span style="background:var(--yellow)"></span>
+    <span style="background:var(--prompt)"></span>
+  </div>
+  <div class="titlebar-text">mike@edmonds:~</div>
+</div>
+
+<div class="nav" id="nav"></div>
+
+<div class="body" id="body">
+  <div style="color:var(--muted);font-size:12px;line-height:1.6;margin-bottom:4px">
+    <div class="ascii">  __  __ _ _          ___
+ |  \/  (_) | _____  | __|
+ | |\/| | | |/ / _ \ | _|
+ |_|  |_|_|_|\_\___/ |___|
+  IT · Games · Photo · Run</div>
+    <div>Last login: <span id="date"></span></div>
+    <div style="margin-top:4px">Type a command or <span style="color:var(--prompt)">tap a tab</span> to explore.</div>
+  </div>
+  <div id="sections"></div>
+  <div class="input-line">
+    <span class="prompt-char">❯</span>
+    <input id="cmd-input" placeholder="type a command..." autocapitalize="off" autocorrect="off" spellcheck="false">
+  </div>
+</div>
+
+<div class="footer">
+  <span>about · photos · games · skills · contact</span>
+  <span>v1.0</span>
+</div>
+
+<script>
+const SECTIONS = {
+  about: { cmd: "cat about.md", label: "About", icon: "~" },
+  photos: { cmd: "ls ./photography", label: "Photos", icon: "◻" },
+  games: { cmd: "ls ./games", label: "Games", icon: "▶" },
+  skills: { cmd: "cat skills.json", label: "Skills", icon: "{}" },
+  contact: { cmd: "cat contact.sh", label: "Contact", icon: "@" },
+};
+
+const PHOTOS = [
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1571755429436-5MZ40MZN7A29LWY01NHE/Killian+1+-+Mike+Edmonds+Studio", label: "Killian", cat: "Fashion" },
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1565023504582-7CLBE0EWFZUB1S56SFF3/Gillette+Ketchum+1", label: "Gillette / Ketchum", cat: "Commercial" },
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1609082423792-OEU73TT7AXCS6Q0YWJJF/Adidas%2BPouch%2B-%2BPhoto%2Bby%2BMike%2BEdmonds", label: "Adidas", cat: "Product" },
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1571256591209-CJSO4CEROYHVVX3G2QII/Mike%2BEdmonds%2BHeadshots%2B1", label: "Headshot", cat: "Headshots" },
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1571755542225-A07V2IMWPJWYHM5IB81G/Killian+3+-+Mike+Edmonds+Studio", label: "Killian II", cat: "Fashion" },
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1609082891723-G47CQFPM2DT8PSNC5H5A/Nintendo+Switch+-+Photo+by+Mike+Edmonds", label: "Nintendo Switch", cat: "Product" },
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1583177734100-XIUAUMNKRUU5LN613PJN/Sasha+Hallock+Portrait+Color+Gels+Photo+by+Mike+Edmonds", label: "Sasha Hallock", cat: "Headshots" },
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1565919003064-I2283SKQPWFVRK23PDD4/GilletteFRB_674.jpg", label: "Gillette BTS", cat: "Commercial" },
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1609082248388-GT0ZKA4TM9Z5PVYWKTOE/Rifle+Paper+Shoe+-+Photo+by+Mike+Edmonds", label: "Rifle Paper Co", cat: "Product" },
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1571755675775-UXG9GMXVB08XY17H7GAO/Killian+4+-+Mike+Edmonds+Studio", label: "Killian III", cat: "Fashion" },
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1609083461227-E47LRF1EDIFXVM97MWMJ/Apple+Watch+-+Photo+by+Mike+Edmonds", label: "Apple Watch", cat: "Product" },
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1572633656635-Y6CSVDHCBL9NXAQ0OMU3/Erin+Headshot+-+Mike+Edmonds", label: "Erin", cat: "Headshots" },
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1609082775363-UG1R6OA8QL5DR45RM6J1/Farmacy%2B-%2BPhoto%2Bby%2BMike%2BEdmonds", label: "Farmacy", cat: "Product" },
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1565919154366-01V65XGBWMG365RACYOZ/GilletteFRB_619.jpg", label: "Gillette Detail", cat: "Commercial" },
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1571755774462-7U84IH2Z82XYSKKQM6IT/Killian+5+-+Mike+Edmonds+Studio", label: "Killian IV", cat: "Fashion" },
+  { src: "https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/1609083112142-QBE2DRC640XHK5HHWMY7/Rollie+Shoes+-+Photo+by+Mike+Edmonds", label: "Rollie Shoes", cat: "Product" },
+];
+
+const GAMES = [
+  { title: "Bounce! Bounce!", desc: "Bounce your balls and rise the high score in this action-packed FPS.", genre: "Shooter", url: "https://wowjustmike.itch.io/bounce-bounce", embed: "https://itch.io/embed/856479", color: "var(--red)" },
+  { title: "Olive Run", desc: "Explore strange worlds and eat eggs as a long-haired dachshund named Olive.", genre: "Platformer", url: "https://wowjustmike.itch.io/olive-run", embed: "https://itch.io/embed/820350", color: "var(--prompt)" },
+  { title: "Evil Purple Robots", desc: "Made in 1 week for Brackey's Game Jam 2021. Collaborative project.", genre: "Action", url: "https://nourek.itch.io/evilpurplerobots", embed: "https://itch.io/embed/927675", color: "var(--pink)" },
+];
+
+const SKILLS = [
+  { category: "Networking & Security", items: ["Network Security", "Network Administration", "Networking", "VPN", "Google Cybersecurity Certificate"] },
+  { category: "Hardware & Repair", items: ["PC Building", "Computer Hardware", "Computer Repair", "Electronics Repair", "Equipment Repair", "Mac & PC Platforms"] },
+  { category: "Support", items: ["Technical Support", "Troubleshooting", "Remote Desktop", "Imaging", "MDM"] },
+  { category: "Development", items: ["Unity", "Blender", "C#", "JavaScript", "HTML/CSS", "Python", "Git"] },
+  { category: "Creative", items: ["Photography", "Lightroom", "Photoshop", "Studio Lighting", "Video Editing", "Web Design"] },
+  { category: "Certifications", items: ["FAA Remote Pilot (Part 107)", "Google Cybersecurity Professional V2"] },
+];
+
+const CONTACTS = [
+  { label: "work", value: "EMS Computer Service", href: "https://emscomputerservice.com/", color: "var(--accent)" },
+  { label: "photo", value: "edmonds.photo", href: "https://www.edmonds.photo/", color: "var(--cyan)" },
+  { label: "games", value: "wowjustmike.itch.io", href: "https://wowjustmike.itch.io/", color: "var(--prompt)" },
+  { label: "linkedin", value: "in/mikedmonds", href: "https://www.linkedin.com/in/mikedmonds", color: "var(--cmd)" },
+];
+
+let state = { active: "about", history: ["about"], typing: false, photoFilter: "All", expandedGame: null };
+
+// -- Render helpers --
+function renderAbout() {
+  return `
+    <div class="about">
+      <h2>## Mike Edmonds</h2>
+      <p>IT engineer at <a href="https://emscomputerservice.com/" target="_blank">EMS Computer Service</a> in <span style="color:var(--accent)">Las Vegas</span>. Previously: fashion photographer in NYC, game developer and web designer in Seattle.</p>
+      <p>I like building things, breaking things, and fixing things — sometimes all three in the same afternoon. Currently into homelabs, AI tooling, custom console builds, and distance running.</p>
+      <p><span style="color:var(--cmd)">IT engineer</span> · <span style="color:var(--prompt)">Game dev</span> · <span style="color:var(--cyan)">Photographer</span> · <span style="color:var(--accent)">Entrepreneur</span></p>
+      <div class="badges">
+        <div class="badge" style="background:rgba(86,212,221,0.05);border:1px solid rgba(86,212,221,0.15)">
+          <div class="city" style="color:var(--cyan)">NYC</div><div class="years">'14–'22</div>
+        </div>
+        <div class="badge" style="background:rgba(126,231,135,0.05);border:1px solid rgba(126,231,135,0.15)">
+          <div class="city" style="color:var(--prompt)">SEA</div><div class="years">'22–'24</div>
+        </div>
+        <div class="badge" style="background:rgba(240,136,62,0.05);border:1px solid rgba(240,136,62,0.15)">
+          <div class="city" style="color:var(--accent)">LAS</div><div class="years">'24–now</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderPhotos() {
+  const cats = ["All", "Fashion", "Commercial", "Product", "Headshots"];
+  const filtered = state.photoFilter === "All" ? PHOTOS : PHOTOS.filter(p => p.cat === state.photoFilter);
+  return `
+    <div>
+      <div class="photo-filters">
+        ${cats.map(c => `<button class="${state.photoFilter === c ? 'active' : ''}" onclick="setPhotoFilter('${c}')">${c}</button>`).join('')}
+      </div>
+      <div class="photo-grid">
+        ${filtered.map(p => `
+          <a class="photo-item" href="https://www.edmonds.photo/" target="_blank">
+            <img src="${p.src}?format=1500w" alt="${p.label}" loading="lazy">
+            <div class="photo-overlay">
+              <span class="photo-label">${p.label}</span>
+              <span class="photo-cat">${p.cat}</span>
+            </div>
+          </a>`).join('')}
+      </div>
+      <div class="photo-link"><a href="https://www.edmonds.photo/" target="_blank">View full portfolio at edmonds.photo →</a></div>
+    </div>`;
+}
+
+function renderGames() {
+  return `
+    <div>
+      <div style="color:var(--muted);font-size:12px;margin-bottom:12px">
+        <span style="color:var(--yellow)">3 playable</span> — built with Unity, Blender, MagicaVoxel
+        <br><span style="font-size:11px">Best played on a desktop browser 🖥</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${GAMES.map((g, i) => `
+          <div class="game-card">
+            <div class="game-inner">
+              <div class="game-head">
+                <div class="game-icon" style="background:${g.color}18;border:1px solid ${g.color}35;color:${g.color}">▶</div>
+                <div><div class="game-title">${g.title}</div><div class="game-genre">${g.genre}</div></div>
+              </div>
+              <div class="game-desc">${g.desc}</div>
+              <div class="game-actions">
+                <button class="game-play" style="background:${g.color}15;border:1px solid ${g.color}35;color:${g.color}" onclick="toggleGame(${i})">${state.expandedGame === i ? 'Close game' : 'Play in browser'}</button>
+                <a class="game-link" href="${g.url}" target="_blank">itch.io</a>
+              </div>
+            </div>
+            ${state.expandedGame === i ? `<div class="game-embed"><iframe src="${g.embed}" title="${g.title}"></iframe></div>` : ''}
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+function renderSkills() {
+  return `
+    <div style="font-size:13px">
+      <div style="color:var(--muted);margin-bottom:14px;font-size:12px">
+        <span style="color:var(--cmd)">{</span> parsing skills.json <span style="color:var(--cmd)">}</span>
+      </div>
+      ${SKILLS.map(s => `
+        <div class="skill-group">
+          <div class="skill-cat">${s.category}</div>
+          <div class="skill-tags">${s.items.map(item => `<span class="skill-tag">${item}</span>`).join('')}</div>
+        </div>`).join('')}
+      <div style="color:var(--muted);font-size:11px;margin-top:8px;font-style:italic">// sourced from LinkedIn + certifications</div>
+    </div>`;
+}
+
+function renderContact() {
+  return `
+    <div style="font-size:13px;color:var(--muted);line-height:2">
+      <div style="color:var(--prompt);margin-bottom:8px">#!/bin/bash</div>
+      <div><span style="color:var(--pink)">echo</span> <span style="color:var(--text)">"Let's connect"</span></div>
+      <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
+        ${CONTACTS.map(c => `
+          <a class="contact-link" href="${c.href}" target="_blank">
+            <span class="contact-label">${c.label}=</span>
+            <span class="contact-value" style="color:${c.color}">"${c.value}"</span>
+          </a>`).join('')}
+      </div>
+    </div>`;
+}
+
+function renderSection(key) {
+  const renderers = { about: renderAbout, photos: renderPhotos, games: renderGames, skills: renderSkills, contact: renderContact };
+  return renderers[key] ? renderers[key]() : '';
+}
+
+// -- State management --
+function render() {
+  const container = document.getElementById('sections');
+  container.innerHTML = state.history.map((key, i) => `
+    <div class="section">
+      <div class="prompt-line">
+        <span class="prompt-char">❯</span>
+        <span class="prompt-cmd">${SECTIONS[key].cmd}</span>
+      </div>
+      <div class="section-body">${renderSection(key)}</div>
+    </div>`).join('');
+
+  // Update nav
+  document.querySelectorAll('.nav button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.key === state.active);
+  });
+
+  // Scroll to bottom
+  setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 50);
+}
+
+function navigate(key) {
+  if (state.typing || !SECTIONS[key]) return;
+  state.typing = true;
+  state.active = key;
+  state.history = [...state.history.filter(h => h !== key), key];
+  state.expandedGame = null;
+  render();
+  setTimeout(() => { state.typing = false; }, 300);
+}
+
+function setPhotoFilter(cat) {
+  state.photoFilter = cat;
+  render();
+}
+
+function toggleGame(i) {
+  state.expandedGame = state.expandedGame === i ? null : i;
+  render();
+}
+
+// -- Init --
+document.getElementById('date').textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+
+// Build nav
+const nav = document.getElementById('nav');
+Object.entries(SECTIONS).forEach(([key, sec]) => {
+  const btn = document.createElement('button');
+  btn.dataset.key = key;
+  btn.innerHTML = `<span style="margin-right:5px;font-size:11px">${sec.icon}</span>${sec.label}`;
+  btn.onclick = () => navigate(key);
+  if (key === 'about') btn.classList.add('active');
+  nav.appendChild(btn);
+});
+
+// Input
+document.getElementById('cmd-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.value.trim()) {
+    const val = e.target.value.trim().toLowerCase();
+    const match = Object.keys(SECTIONS).find(k => val === k || val.includes(k));
+    if (match) navigate(match);
+    else if (val === 'clear') { state.history = [state.active]; render(); }
+    e.target.value = '';
+  }
+});
+
+// Boot sequence
+setTimeout(() => {
+  document.getElementById('boot').classList.add('hidden');
+  render();
+}, 1600);
+</script>
+</body>
+</html>
