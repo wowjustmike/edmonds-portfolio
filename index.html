@@ -394,7 +394,7 @@ function renderSection(key) {
 function render() {
   const container = document.getElementById('sections');
   container.innerHTML = state.history.map((key, i) => `
-    <div class="section">
+    <div class="section" id="section-${key}">
       <div class="prompt-line">
         <span class="prompt-char">❯</span>
         <span class="prompt-cmd">${SECTIONS[key].cmd}</span>
@@ -407,8 +407,15 @@ function render() {
     btn.classList.toggle('active', btn.dataset.key === state.active);
   });
 
-  // Scroll to bottom
-  setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 50);
+  // Scroll active section's prompt line to just below the sticky header
+  setTimeout(() => {
+    const el = document.getElementById('section-' + state.active);
+    if (el) {
+      const headerOffset = 100; // titlebar + nav height
+      const top = el.getBoundingClientRect().top + window.pageYOffset - headerOffset;
+      window.scrollTo({ top, behavior: 'smooth' });
+    }
+  }, 50);
 }
 
 function navigate(key) {
@@ -462,5 +469,18 @@ setTimeout(() => {
   render();
 }, 1600);
 </script>
+<!--Start of Tawk.to Script-->
+<script type="text/javascript">
+var Tawk_API=Tawk_API||{}, Tawk_LoadStart=new Date();
+(function(){
+var s1=document.createElement("script"),s0=document.getElementsByTagName("script")[0];
+s1.async=true;
+s1.src='https://embed.tawk.to/6a1b6852cdf6251c344ddde8/1jptgv11m';
+s1.charset='UTF-8';
+s1.setAttribute('crossorigin','*');
+s0.parentNode.insertBefore(s1,s0);
+})();
+</script>
+<!--End of Tawk.to Script-->
 </body>
 </html>
