@@ -7,6 +7,14 @@
 <meta name="description" content="Mike Edmonds — IT engineer, game developer, photographer, and entrepreneur based in Las Vegas.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-P1R72BD1FS"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-P1R72BD1FS');
+</script>
 <style>
   :root {
     --bg: #0a0e14;
@@ -261,7 +269,7 @@ const CONTACTS = [
   { label: "insta", value: "@makepizzabook", href: "http://instagram.com/makepizzabook", color: "var(--pink)" },
 ];
 
-let state = { active: "about", history: ["about"], typing: false, photoFilter: "All", expandedGame: null };
+let state = { active: "about", history: ["about"], typing: false, photoFilter: "All", expandedGame: null, initialLoad: true };
 
 // -- Render helpers --
 function renderAbout() {
@@ -363,7 +371,7 @@ function renderContact() {
       <div style="color:var(--prompt);margin-bottom:8px">#!/bin/bash</div>
       <div><span style="color:var(--pink)">echo</span> <span style="color:var(--text)">"Let's connect"</span></div>
       <div style="margin-top:16px;display:flex;flex-direction:column;align-items:center;gap:12px">
-        <img src="mike.jpg" alt="Mike Edmonds" style="width:100px;height:100px;border-radius:50%;border:2px solid var(--border);object-fit:cover">
+        <img src="https://images.squarespace-cdn.com/content/v1/533c63fce4b0d13f8c670ba2/9a4b9f7c-4e4e-49e3-af22-057d3101bc87/Mike+Edmonds?format=300w" alt="Mike Edmonds" style="width:100px;height:100px;border-radius:50%;border:2px solid var(--border);object-fit:cover">
         <div style="text-align:center">
           <div style="color:var(--text);font-size:14px;font-weight:600">Mike Edmonds</div>
           <div style="color:var(--muted);font-size:11px;margin-top:2px">Las Vegas, NV</div>
@@ -941,13 +949,6 @@ function renderBonus() {
         <div id="gb-entries" style="display:flex;flex-direction:column;gap:6px"></div>
       </div>
 
-      <!-- Packet Run -->
-      <div style="margin-bottom:24px">
-        <div style="color:var(--pink);font-size:11px;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px">🕹 Packet Run</div>
-        <div style="color:var(--muted);font-size:12px;margin-bottom:10px">You are a data packet. Jump over firewalls. Survive the network.</div>
-        <canvas id="pktrun-canvas" style="width:100%;height:340px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:var(--bg)"></canvas>
-      </div>
-
       <!-- Visitor Counter -->
       <div style="text-align:center;padding:16px 0;border-top:1px solid var(--border)">
         <div style="color:var(--muted);font-size:10px;letter-spacing:1px">VISITORS</div>
@@ -1016,16 +1017,19 @@ function render() {
 
   // Scroll active section's prompt line to just below the sticky header
   setTimeout(() => {
-    const el = document.getElementById('section-' + state.active);
-    if (el) {
-      const headerOffset = 100; // titlebar + nav height
-      const top = el.getBoundingClientRect().top + window.pageYOffset - headerOffset;
-      window.scrollTo({ top, behavior: 'smooth' });
+    if (state.initialLoad) {
+      window.scrollTo({ top: 0 });
+      state.initialLoad = false;
+    } else {
+      const el = document.getElementById('section-' + state.active);
+      if (el) {
+        const headerOffset = 100;
+        const top = el.getBoundingClientRect().top + window.pageYOffset - headerOffset;
+        window.scrollTo({ top, behavior: 'smooth' });
+      }
     }
     // Init bonus section components if visible
     if (state.history.includes('bonus')) {
-      const c = document.getElementById('pktrun-canvas');
-      if (c) { RUNNER.canvas = null; RUNNER.running = false; RUNNER.init('pktrun-canvas'); }
       loadGuestbook();
     }
   }, 100);
