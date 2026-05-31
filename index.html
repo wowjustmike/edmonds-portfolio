@@ -158,11 +158,48 @@
 </div>
 
 <div class="footer">
-  <span>about · it · photos · games · skills · contact</span>
+  <span>about · it · photos · games · skills · contact · bonus</span>
   <span>v1.0</span>
 </div>
 
 <script>
+// ===== SUPABASE CONFIG =====
+const SUPABASE_URL = 'https://upfivbyhpwfxacwtsvpx.supabase.co/rest/v1';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwZml2YnlocHdmeGFjd3RzdnB4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxNzc0NDgsImV4cCI6MjA5NTc1MzQ0OH0.dcMH_PbM1t1nNlSvnHF2B4KkE5r03MVgSlBYXY732Io';
+const SB_HEADERS = {
+  'apikey': SUPABASE_KEY,
+  'Authorization': 'Bearer ' + SUPABASE_KEY,
+  'Content-Type': 'application/json',
+  'Prefer': 'return=representation',
+};
+
+const DB = {
+  async get(table, params = '') {
+    try {
+      const r = await fetch(SUPABASE_URL + '/' + table + '?select=*' + params, { headers: SB_HEADERS });
+      if (!r.ok) throw new Error(r.status);
+      return await r.json();
+    } catch (e) { console.warn('DB read failed:', e); return null; }
+  },
+  async insert(table, data) {
+    try {
+      const r = await fetch(SUPABASE_URL + '/' + table, {
+        method: 'POST', headers: SB_HEADERS, body: JSON.stringify(data),
+      });
+      if (!r.ok) throw new Error(r.status);
+      return await r.json();
+    } catch (e) { console.warn('DB write failed:', e); return null; }
+  },
+  async count(table) {
+    try {
+      const r = await fetch(SUPABASE_URL + '/' + table + '?select=id', { headers: { ...SB_HEADERS, 'Prefer': 'count=exact' } });
+      if (!r.ok) throw new Error(r.status);
+      const count = r.headers.get('content-range');
+      return count ? parseInt(count.split('/')[1]) : 0;
+    } catch (e) { console.warn('DB count failed:', e); return null; }
+  }
+};
+
 const SECTIONS = {
   about: { cmd: "cat about.md", label: "About", icon: "~" },
   it: { cmd: "cat it-career.md", label: "IT", icon: "⚙" },
@@ -170,6 +207,7 @@ const SECTIONS = {
   games: { cmd: "ls ./games", label: "Games", icon: "▶" },
   skills: { cmd: "cat skills.json", label: "Skills", icon: "{}" },
   contact: { cmd: "cat contact.sh", label: "Contact", icon: "@" },
+  bonus: { cmd: "sudo ./bonus.sh", label: "Bonus", icon: "★" },
 };
 
 const ALIASES = {
@@ -179,6 +217,7 @@ const ALIASES = {
   games: ["games", "game", "play", "gaming", "videogames", "arcade", "unity", "bounce", "olive", "itch"],
   skills: ["skills", "skill", "tech", "stack", "tools", "resume", "cv", "experience", "qualifications", "abilities"],
   contact: ["contact", "email", "links", "connect", "hire", "reach", "social", "linkedin", "message", "pizza"],
+  bonus: ["bonus", "extra", "fun", "easter", "secret", "hidden", "surprise", "setup", "gear", "homelab"],
 };
 
 const PHOTOS = [
@@ -332,6 +371,9 @@ function renderContact() {
         <a href="mailto:medmondsr@gmail.com" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;background:rgba(126,231,135,0.08);border:1px solid rgba(126,231,135,0.25);border-radius:6px;text-decoration:none;transition:background 0.2s">
           <span style="color:var(--prompt);font-size:13px;font-weight:600">✉ medmondsr@gmail.com</span>
         </a>
+        <a href="javascript:void(0)" onclick="Tawk_API.showWidget();Tawk_API.maximize();" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;background:rgba(86,212,221,0.08);border:1px solid rgba(86,212,221,0.25);border-radius:6px;text-decoration:none;cursor:pointer;transition:background 0.2s">
+          <span style="color:var(--cyan);font-size:13px;font-weight:600">💬 Chat with me</span>
+        </a>
       </div>
       <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
         ${CONTACTS.map(c => `
@@ -385,8 +427,573 @@ function renderIT() {
     </div>`;
 }
 
+// ===== PACKET RUN GAME ENGINE =====
+const RUNNER = {
+  canvas: null, ctx: null, running: false, score: 0, speed: 4, baseSpeed: 4,
+  screen: 'menu', initials: ['A','A','A'], lastFrame: 0, frameCount: 0,
+  player: { x: 50, y: 0, vy: 0, w: 30, h: 24, grounded: true, jumping: false },
+  ground: 280, obstacles: [], bgElements: [], nextObstacle: 80, minGap: 70,
+  cachedScores: [],
+
+  async loadScores() {
+    const rows = await DB.get('leaderboard', '&order=score.desc&limit=50');
+    if (rows) { this.cachedScores = rows.map(r => ({ name: r.name, score: r.score })); }
+    else { this.cachedScores = JSON.parse(localStorage.getItem('pktrun_scores') || '[]'); }
+  },
+
+  async saveScore(name, score) {
+    const result = await DB.insert('leaderboard', { name, score });
+    if (result) { await this.loadScores(); }
+    else {
+      const scores = JSON.parse(localStorage.getItem('pktrun_scores') || '[]');
+      scores.push({ name, score }); scores.sort((a,b) => b.score - a.score);
+      localStorage.setItem('pktrun_scores', JSON.stringify(scores.slice(0, 50)));
+      this.cachedScores = scores;
+    }
+  },
+
+  OBSTACLE_TYPES: [
+    { label: 'FIREWALL', w: 20, h: 40, color: '#ff7b72' },
+    { label: '[ERR:404]', w: 28, h: 28, color: '#f0883e' },
+    { label: '{VIRUS}', w: 22, h: 34, color: '#d2a8ff' },
+    { label: '[TIMEOUT]', w: 26, h: 26, color: '#e3b341' },
+    { label: 'DDoS', w: 18, h: 44, color: '#ff7b72' },
+    { label: '[ERR:500]', w: 28, h: 30, color: '#f0883e' },
+    { label: 'MALWARE', w: 24, h: 36, color: '#d2a8ff' },
+  ],
+
+  EASTER_EGGS: [
+    '> routing through Tokyo...', '> Tacoma.exe: 230K mi loaded',
+    '> COYS! Spurs win 3-1', '> pizza_cookbook.pdf downloaded',
+    '> espresso_shot --double', '> homelab: QNAP array online',
+    '> SteamDeck: battery 42%', '> playlist: Tech Bench Tunes',
+    '> North Dakota: LEGENDARY', '> GTA_VI_LEAKED.iso ???',
+    '> bounce_bounce.exe running', '> maneki-neko says hello',
+    '> klipsch_speakers: volume 11', '> race_bib #42 equipped',
+  ],
+
+  init(canvasId) {
+    this.canvas = document.getElementById(canvasId);
+    if (!this.canvas) return;
+    this.ctx = this.canvas.getContext('2d');
+    this.canvas.width = this.canvas.offsetWidth;
+    this.canvas.height = 340;
+    this.ground = this.canvas.height - 60;
+    this.player.y = this.ground - this.player.h;
+    const jump = () => { if (this.screen === 'menu') { this.start(); } else if (this.screen === 'playing') { this.jump(); } else if (this.screen === 'leaderboard') { this.screen = 'menu'; this.draw(); } };
+    this.canvas.addEventListener('click', (e) => {
+      const rect = this.canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left, y = e.clientY - rect.top;
+      if (this.screen === 'gameover') { this.handleGameOverClick(x, y); return; }
+      jump();
+    });
+    this.canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const rect = this.canvas.getBoundingClientRect();
+      const t = e.touches[0];
+      const x = t.clientX - rect.left, y = t.clientY - rect.top;
+      if (this.screen === 'gameover') { this.handleGameOverClick(x, y); return; }
+      jump();
+    }, {passive:false});
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); jump(); }
+    });
+    this.screen = 'menu';
+    this.loadScores().then(() => this.draw());
+    this.draw();
+  },
+
+  start() {
+    this.score = 0; this.speed = this.baseSpeed; this.frameCount = 0;
+    this.obstacles = []; this.bgElements = []; this.nextObstacle = 80; this.minGap = 70;
+    this.player.y = this.ground - this.player.h;
+    this.player.vy = 0; this.player.grounded = true;
+    this.initials = ['A','A','A'];
+    this.screen = 'playing'; this.running = true;
+    this.lastFrame = performance.now();
+    this.loop();
+  },
+
+  jump() {
+    if (this.player.grounded) {
+      this.player.vy = -10;
+      this.player.grounded = false;
+    }
+  },
+
+  handleGameOverClick(x, y) {
+    const cw = this.canvas.width;
+    for (let i = 0; i < 3; i++) {
+      const bx = cw/2 - 60 + i * 40;
+      if (x >= bx && x <= bx + 30) {
+        if (y >= 155 && y <= 180) { this.initials[i] = String.fromCharCode(((this.initials[i].charCodeAt(0) - 64) % 26) + 65); this.draw(); }
+        if (y >= 215 && y <= 240) { this.initials[i] = String.fromCharCode(((this.initials[i].charCodeAt(0) - 66 + 26) % 26) + 65); this.draw(); }
+      }
+    }
+    if (y >= 250 && y <= 285 && x >= cw/2 - 65 && x <= cw/2 + 65) {
+      this.saveScore(this.initials.join(''), this.score).then(() => {
+        this.screen = 'leaderboard';
+        this.draw();
+      });
+    }
+  },
+
+  spawnObstacle() {
+    const type = this.OBSTACLE_TYPES[Math.floor(Math.random() * this.OBSTACLE_TYPES.length)];
+    this.obstacles.push({
+      x: this.canvas.width + 10,
+      y: this.ground - type.h,
+      w: type.w, h: type.h,
+      label: type.label, color: type.color,
+    });
+  },
+
+  update(dt) {
+    this.frameCount++;
+    // Increase speed over time
+    this.speed = this.baseSpeed + this.frameCount * 0.003;
+    this.score = Math.floor(this.frameCount * 0.5);
+
+    // Player physics
+    if (!this.player.grounded) {
+      this.player.vy += 0.55; // gravity
+      this.player.y += this.player.vy;
+      if (this.player.y >= this.ground - this.player.h) {
+        this.player.y = this.ground - this.player.h;
+        this.player.vy = 0;
+        this.player.grounded = true;
+      }
+    }
+
+    // Obstacles
+    this.nextObstacle--;
+    if (this.nextObstacle <= 0) {
+      this.spawnObstacle();
+      this.minGap = Math.max(28, 70 - this.frameCount * 0.02);
+      this.nextObstacle = this.minGap + Math.random() * 40;
+    }
+    for (let i = this.obstacles.length - 1; i >= 0; i--) {
+      this.obstacles[i].x -= this.speed;
+      if (this.obstacles[i].x + this.obstacles[i].w < 0) { this.obstacles.splice(i, 1); continue; }
+      // Collision
+      const o = this.obstacles[i], p = this.player;
+      if (p.x + p.w - 6 > o.x && p.x + 6 < o.x + o.w && p.y + p.h - 4 > o.y && p.y + 4 < o.y + o.h) {
+        this.running = false;
+        this.screen = 'gameover';
+        return;
+      }
+    }
+
+    // Background elements
+    if (this.frameCount % 60 === 0 && Math.random() < 0.5) {
+      const txt = this.EASTER_EGGS[Math.floor(Math.random() * this.EASTER_EGGS.length)];
+      this.bgElements.push({ x: this.canvas.width, y: 20 + Math.random() * (this.ground - 80), text: txt });
+    }
+    for (let i = this.bgElements.length - 1; i >= 0; i--) {
+      this.bgElements[i].x -= this.speed * 0.4;
+      if (this.bgElements[i].x < -200) this.bgElements.splice(i, 1);
+    }
+  },
+
+  loop() {
+    if (!this.running) { this.draw(); return; }
+    const now = performance.now();
+    if (now - this.lastFrame >= 16.67) { // ~60fps
+      this.lastFrame = now;
+      this.update();
+      this.draw();
+    }
+    requestAnimationFrame(() => this.loop());
+  },
+
+  draw() {
+    const c = this.ctx, w = this.canvas.width, h = this.canvas.height;
+    c.fillStyle = '#0a0e14'; c.fillRect(0, 0, w, h);
+
+    if (this.screen === 'menu') {
+      c.fillStyle = '#7ee787'; c.font = 'bold 18px monospace'; c.textAlign = 'center';
+      c.fillText('PACKET RUN', w/2, 60);
+      c.fillStyle = '#79c0ff'; c.font = '11px monospace';
+      c.fillText('You are a data packet.', w/2, 85);
+      c.fillText('Jump over firewalls and errors.', w/2, 102);
+      c.fillText('Tap / Click / Space to jump', w/2, 130);
+      // Pixel art packet
+      c.fillStyle = '#7ee787';
+      c.fillRect(w/2 - 18, 155, 36, 24);
+      c.fillStyle = '#0a0e14'; c.font = 'bold 9px monospace';
+      c.fillText('PKT', w/2, 170);
+      // Ground preview
+      c.fillStyle = '#1b2332';
+      c.fillRect(0, 220, w, 2);
+      c.fillStyle = '#6e7681'; c.font = '10px monospace'; c.textAlign = 'left';
+      for (let i = 0; i < w; i += 12) { c.fillText('═', i, 234); }
+      // Tap to start
+      c.textAlign = 'center';
+      c.fillStyle = '#e3b341'; c.font = '12px monospace';
+      c.fillText('[ TAP TO START ]', w/2, 270);
+      // High score
+      const scores = this.cachedScores;
+      if (scores.length > 0) {
+        c.fillStyle = '#e3b341'; c.font = '11px monospace';
+        c.fillText('HIGH SCORE: ' + scores[0].name + ' \u2014 ' + scores[0].score, w/2, 300);
+      }
+      c.fillStyle = '#6e7681'; c.font = '9px monospace';
+      c.fillText('A Mike Edmonds Production', w/2, h - 12);
+      return;
+    }
+
+    if (this.screen === 'gameover') {
+      c.fillStyle = '#ff7b72'; c.font = 'bold 18px monospace'; c.textAlign = 'center';
+      c.fillText('PACKET DROPPED', w/2, 45);
+      c.fillStyle = '#e3b341'; c.font = 'bold 14px monospace';
+      c.fillText('Score: ' + this.score + ' bytes', w/2, 75);
+      c.fillStyle = '#6e7681'; c.font = '11px monospace';
+      c.fillText('Speed: ' + this.speed.toFixed(1) + 'x', w/2, 95);
+      c.fillStyle = '#c9d1d9'; c.font = '12px monospace';
+      c.fillText('Enter your initials:', w/2, 130);
+      for (let i = 0; i < 3; i++) {
+        const bx = w/2 - 60 + i * 40;
+        c.fillStyle = '#6e7681'; c.font = '14px monospace'; c.textAlign = 'center';
+        c.fillText('\u25B2', bx + 15, 170);
+        c.fillStyle = '#1b2332'; c.fillRect(bx, 180, 30, 30);
+        c.fillStyle = '#7ee787'; c.font = 'bold 18px monospace';
+        c.fillText(this.initials[i], bx + 15, 202);
+        c.fillStyle = '#6e7681'; c.font = '14px monospace';
+        c.fillText('\u25BC', bx + 15, 232);
+      }
+      c.fillStyle = '#7ee787'; c.fillRect(w/2 - 65, 250, 130, 32);
+      c.fillStyle = '#0a0e14'; c.font = 'bold 13px monospace'; c.textAlign = 'center';
+      c.fillText('SAVE SCORE', w/2, 270);
+      return;
+    }
+
+    if (this.screen === 'leaderboard') {
+      c.fillStyle = '#e3b341'; c.font = 'bold 16px monospace'; c.textAlign = 'center';
+      c.fillText('\uD83C\uDFC6 LEADERBOARD', w/2, 35);
+      const scores = this.cachedScores;
+      scores.slice(0, 8).forEach((s, i) => {
+        const color = i === 0 ? '#e3b341' : i === 1 ? '#c9d1d9' : i === 2 ? '#f0883e' : '#6e7681';
+        c.fillStyle = color; c.font = '12px monospace';
+        c.textAlign = 'left'; c.fillText((i+1) + '. ' + s.name, 30, 70 + i * 28);
+        c.textAlign = 'right'; c.fillText(s.score + ' bytes', w - 30, 70 + i * 28);
+      });
+      c.fillStyle = '#6e7681'; c.font = '11px monospace'; c.textAlign = 'center';
+      c.fillText('Tap to play again', w/2, h - 20);
+      return;
+    }
+
+    // ===== PLAYING =====
+    // Background easter eggs
+    c.fillStyle = '#1b233280'; c.font = '9px monospace'; c.textAlign = 'left';
+    this.bgElements.forEach(bg => { c.fillText(bg.text, bg.x, bg.y); });
+
+    // Background network lines
+    c.strokeStyle = '#1b2332'; c.lineWidth = 1;
+    for (let y = 40; y < this.ground; y += 50) {
+      c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke();
+    }
+
+    // Ground
+    c.fillStyle = '#2a3444'; c.fillRect(0, this.ground, w, 2);
+    c.fillStyle = '#6e7681'; c.font = '10px monospace'; c.textAlign = 'left';
+    const offset = Math.floor(this.frameCount * this.speed) % 12;
+    for (let i = -offset; i < w + 12; i += 12) { c.fillText('\u2550', i, this.ground + 16); }
+    // Second ground detail line
+    c.fillStyle = '#1b2332'; c.font = '9px monospace';
+    const offset2 = Math.floor(this.frameCount * this.speed * 0.5) % 20;
+    for (let i = -offset2; i < w + 20; i += 20) { c.fillText('\u2500\u2500\u2500', i, this.ground + 30); }
+
+    // Obstacles
+    this.obstacles.forEach(o => {
+      c.fillStyle = o.color + '30';
+      c.fillRect(o.x, o.y, o.w, o.h);
+      c.strokeStyle = o.color;
+      c.lineWidth = 1.5;
+      c.strokeRect(o.x, o.y, o.w, o.h);
+      c.fillStyle = o.color;
+      c.font = 'bold 7px monospace';
+      c.textAlign = 'center';
+      // Vertical text for tall obstacles
+      const chars = o.label.split('');
+      const charH = Math.min(8, o.h / chars.length);
+      chars.forEach((ch, ci) => {
+        c.fillText(ch, o.x + o.w/2, o.y + 8 + ci * charH);
+      });
+    });
+
+    // Player
+    const p = this.player;
+    c.fillStyle = '#7ee787';
+    c.fillRect(p.x, p.y, p.w, p.h);
+    c.fillStyle = '#0a0e14'; c.font = 'bold 8px monospace'; c.textAlign = 'center';
+    c.fillText('PKT', p.x + p.w/2, p.y + 15);
+    // Packet trail
+    if (!p.grounded) {
+      c.fillStyle = '#7ee78740';
+      c.fillRect(p.x - 8, p.y + 4, 6, p.h - 8);
+      c.fillRect(p.x - 16, p.y + 8, 5, p.h - 16);
+    }
+
+    // HUD
+    c.fillStyle = 'rgba(10,14,20,0.7)'; c.fillRect(0, 0, w, 22);
+    c.fillStyle = '#6e7681'; c.font = '10px monospace'; c.textAlign = 'left';
+    c.fillText('BYTES: ' + this.score, 8, 15);
+    c.fillStyle = '#e3b341'; c.textAlign = 'center';
+    c.fillText(this.speed.toFixed(1) + 'x', w/2, 15);
+    c.fillStyle = '#79c0ff'; c.textAlign = 'right';
+    c.fillText('PING: ' + Math.max(1, Math.floor(200 / this.speed)) + 'ms', w - 8, 15);
+  }
+};
+
+// ===== SETUP DATA =====
+const SETUP = [
+  { cat: '🖥 Desktop PC', items: ['Ryzen 9 CPU', 'RTX 4070 GPU', '32GB RAM'] },
+  { cat: '💻 Laptop', items: ['MacBook Air M2', '16GB RAM'] },
+  { cat: '🏠 Homelab', items: [
+    'Windows 11 Mini-PC (Intel N100)',
+    'QNAP 4-Bay NAS (4×8TB RAID-5, ~24TB)',
+    'Rackmate 10" Rack',
+    'UniFi Flex 2.5G PoE Switch',
+    'Tripp Lite 600VA UPS',
+    'GL.iNet Comet Remote KVM'
+  ]},
+  { cat: '🎮 Gaming', items: [
+    'Ayn Odin 2 Portal', 'Steam Deck LCD', 'Xbox Series X',
+    'Nintendo Switch 2', 'PlayStation 4', 'TrimUI Brick',
+    'Miyoo Mini', 'New 3DS XL', 'PS Vita'
+  ]},
+  { cat: '🔊 Hi-Fi', items: [
+    'Klipsch RP-600M II Speakers', 'PS Audio Sprout Amp',
+    'WiiM Pro DAC', 'Fluance RT82 Turntable',
+    'Sennheiser HD650', 'Sony XM3 Wireless'
+  ]},
+  { cat: '☕ Espresso', items: ['Gaggia Classic', 'Eureka Mignon Facile Grinder', 'xBloom Coffee Maker'] },
+];
+
+// ===== ROCKET EASTER EGG =====
+let rocketActive = false;
+function launchRocket() {
+  rocketActive = true;
+  const rocketDiv = document.createElement('div');
+  rocketDiv.id = 'rocket-easter-egg';
+  rocketDiv.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:999;display:flex;align-items:center;justify-content:center;flex-direction:column;font-family:var(--font);cursor:pointer';
+  rocketDiv.onclick = () => { rocketDiv.remove(); rocketActive = false; };
+
+  const pre = document.createElement('pre');
+  pre.style.cssText = 'color:var(--cyan);font-size:10px;line-height:1.3;text-align:center;white-space:pre';
+
+  const frames = [
+`
+        🌑
+
+       .  ✦  .
+    ✦    .    ✦
+
+    ▄▄████████▄▄
+   ███ NASA  ███
+   ██████████████
+   ████████████
+    ▀████████▀
+     ████████
+      ██████
+       ████
+       ████
+      ▐████▌
+      ▐████▌
+     ▄██████▄
+    ████████████
+
+  T-minus 3...`,
+`
+        🌑
+
+       .  ✦  .
+    ✦    .    ✦
+
+    ▄▄████████▄▄
+   ███ NASA  ███
+   ██████████████
+   ████████████
+    ▀████████▀
+     ████████
+      ██████
+       ████
+       ████
+      ▐████▌
+      ▐████▌
+     ▄██████▄
+    ████████████
+       🔥🔥
+  T-minus 2...`,
+`
+    ▄▄████████▄▄
+   ███ NASA  ███
+   ██████████████
+   ████████████
+    ▀████████▀
+     ████████
+      ██████
+       ████
+       ████
+      ▐████▌
+      ▐████▌
+     ▄██████▄
+    ████████████
+     🔥🔥🔥🔥
+    🔥🔥🔥🔥🔥
+   🔥🔥🔥🔥🔥🔥
+
+    LIFTOFF! 🚀`,
+`
+
+
+        🚀
+
+      🔥🔥🔥
+     🔥🔥🔥🔥
+
+
+
+
+        ☁️
+
+
+
+  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+
+    GODSPEED! 🌟
+  you found an
+  easter egg 🥚`,
+`
+
+
+
+
+          🚀 ✦
+
+
+    ✦  .    ✦
+       .  ✦  .
+  .  ✦    .    ✦
+    .  ✦  .  ✦  .
+  ✦  .    ✦    .
+       .  ✦  .
+
+  🌍
+
+  AD ASTRA 🌟
+  tap to close`
+  ];
+
+  let frame = 0;
+  pre.textContent = frames[0];
+  rocketDiv.appendChild(pre);
+  document.body.appendChild(rocketDiv);
+
+  const iv = setInterval(() => {
+    frame++;
+    if (frame >= frames.length) { clearInterval(iv); return; }
+    pre.textContent = frames[frame];
+  }, 1500);
+}
+
+// ===== RENDER BONUS =====
+function renderBonus() {
+  // Log visit and load count asynchronously
+  setTimeout(async () => {
+    await DB.insert('visitors', {});
+    const count = await DB.count('visitors');
+    const el = document.getElementById('visitor-count');
+    if (el) el.textContent = String(count || 0).padStart(6, '0');
+  }, 200);
+
+  return `
+    <div style="font-size:13px">
+      <!-- Spotify -->
+      <div style="margin-bottom:24px">
+        <div style="color:var(--pink);font-size:11px;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px">🎵 Tech Bench Tunes</div>
+        <div style="color:var(--muted);font-size:12px;margin-bottom:10px">What I listen to while fixing things.</div>
+        <iframe style="border-radius:12px" src="https://open.spotify.com/embed/playlist/32pMRdKo1z3DS4zUUH56BP?utm_source=generator&theme=0" width="100%" height="152" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+      </div>
+
+      <!-- Setup -->
+      <div style="margin-bottom:24px">
+        <div style="color:var(--pink);font-size:11px;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px">⌨ My Setup</div>
+        <div style="color:var(--muted);font-size:12px;margin-bottom:12px">What powers the operation.</div>
+        ${SETUP.map(s => `
+          <div style="margin-bottom:12px">
+            <div style="color:var(--cmd);font-size:12px;font-weight:600;margin-bottom:6px">${s.cat}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px">
+              ${s.items.map(item => `<span style="background:rgba(121,192,255,0.07);border:1px solid rgba(121,192,255,0.16);color:var(--text);padding:4px 10px;border-radius:4px;font-size:11px">${item}</span>`).join('')}
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <!-- Guestbook -->
+      <div style="margin-bottom:24px">
+        <div style="color:var(--pink);font-size:11px;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px">📝 Guestbook</div>
+        <div style="color:var(--muted);font-size:12px;margin-bottom:10px">Leave a message. Be cool.</div>
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+          <input id="gb-name" placeholder="Name" maxlength="20" style="flex:0 0 80px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:8px;color:var(--text);font-family:var(--font);font-size:12px;outline:none">
+          <input id="gb-msg" placeholder="Your message..." maxlength="100" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:8px;color:var(--text);font-family:var(--font);font-size:12px;outline:none">
+          <button onclick="addGuestbookEntry()" style="background:rgba(126,231,135,0.1);border:1px solid rgba(126,231,135,0.3);border-radius:4px;padding:8px 12px;color:var(--prompt);font-family:var(--font);font-size:12px;cursor:pointer">Send</button>
+        </div>
+        <div id="gb-entries" style="display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+
+      <!-- Packet Run -->
+      <div style="margin-bottom:24px">
+        <div style="color:var(--pink);font-size:11px;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px">🕹 Packet Run</div>
+        <div style="color:var(--muted);font-size:12px;margin-bottom:10px">You are a data packet. Jump over firewalls. Survive the network.</div>
+        <canvas id="pktrun-canvas" style="width:100%;height:340px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:var(--bg)"></canvas>
+      </div>
+
+      <!-- Visitor Counter -->
+      <div style="text-align:center;padding:16px 0;border-top:1px solid var(--border)">
+        <div style="color:var(--muted);font-size:10px;letter-spacing:1px">VISITORS</div>
+        <div id="visitor-count" style="font-family:var(--font);color:var(--yellow);font-size:20px;font-weight:700;margin-top:4px;background:var(--surface);display:inline-block;padding:4px 16px;border:1px solid var(--border);border-radius:4px;letter-spacing:3px">------</div>
+        <div style="color:var(--muted);font-size:10px;margin-top:4px">since launch</div>
+      </div>
+    </div>`;
+}
+
+// Guestbook functions
+async function addGuestbookEntry() {
+  const name = document.getElementById('gb-name')?.value.trim() || 'Anon';
+  const msg = document.getElementById('gb-msg')?.value.trim();
+  if (!msg) return;
+  document.getElementById('gb-name').value = '';
+  document.getElementById('gb-msg').value = '';
+  const result = await DB.insert('guestbook', { name, message: msg });
+  if (!result) {
+    const entries = JSON.parse(localStorage.getItem('guestbook') || '[]');
+    entries.unshift({ name, message: msg, created_at: new Date().toISOString() });
+    localStorage.setItem('guestbook', JSON.stringify(entries.slice(0, 50)));
+  }
+  loadGuestbook();
+}
+
+async function loadGuestbook() {
+  const el = document.getElementById('gb-entries');
+  if (!el) return;
+  let entries = await DB.get('guestbook', '&order=created_at.desc&limit=10');
+  if (!entries) {
+    entries = JSON.parse(localStorage.getItem('guestbook') || '[]');
+  }
+  if (entries.length === 0) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:12px;text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:4px">No entries yet. Be the first!</div>';
+    return;
+  }
+  el.innerHTML = entries.slice(0, 10).map(e => `
+    <div style="padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:4px;font-size:11px">
+      <span style="color:var(--accent);font-weight:600">${e.name}</span>
+      <span style="color:var(--muted);margin-left:6px;font-size:10px">${new Date(e.created_at).toLocaleDateString()}</span>
+      <div style="color:var(--text);margin-top:3px">${e.message}</div>
+    </div>`).join('');
+}
+
 function renderSection(key) {
-  const renderers = { about: renderAbout, it: renderIT, photos: renderPhotos, games: renderGames, skills: renderSkills, contact: renderContact };
+  const renderers = { about: renderAbout, it: renderIT, photos: renderPhotos, games: renderGames, skills: renderSkills, contact: renderContact, bonus: renderBonus };
   return renderers[key] ? renderers[key]() : '';
 }
 
@@ -415,7 +1022,13 @@ function render() {
       const top = el.getBoundingClientRect().top + window.pageYOffset - headerOffset;
       window.scrollTo({ top, behavior: 'smooth' });
     }
-  }, 50);
+    // Init bonus section components if visible
+    if (state.history.includes('bonus')) {
+      const c = document.getElementById('pktrun-canvas');
+      if (c) { RUNNER.canvas = null; RUNNER.running = false; RUNNER.init('pktrun-canvas'); }
+      loadGuestbook();
+    }
+  }, 100);
 }
 
 function navigate(key) {
@@ -459,6 +1072,7 @@ document.getElementById('cmd-input').addEventListener('keydown', (e) => {
     const match = Object.keys(ALIASES).find(k => ALIASES[k].some(a => val === a || val.includes(a)));
     if (match) navigate(match);
     else if (val === 'clear') { state.history = [state.active]; render(); }
+    else if (['space','rocket','nasa','launch','liftoff'].some(w => val.includes(w))) { launchRocket(); }
     e.target.value = '';
   }
 });
@@ -472,6 +1086,7 @@ setTimeout(() => {
 <!--Start of Tawk.to Script-->
 <script type="text/javascript">
 var Tawk_API=Tawk_API||{}, Tawk_LoadStart=new Date();
+Tawk_API.onLoad = function(){ Tawk_API.hideWidget(); };
 (function(){
 var s1=document.createElement("script"),s0=document.getElementsByTagName("script")[0];
 s1.async=true;
